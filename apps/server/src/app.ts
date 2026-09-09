@@ -12,12 +12,15 @@ import { ImageExports, snapshot, streamArchive } from './exports.js';
 import { ExportCache } from './export-cache.js';
 import { VideoExports } from './video-exports.js';
 import { musicBytes, videoMusic, videoSelection } from './video-catalog.js';
+import { IdentityStore } from './identity-store.js';
 export async function createApp(
   dir = dataDir,
   notify: (entry: Entry) => Promise<void> = createNotifier(),
 ) {
   const store = new Store(dir);
   await store.init();
+  const identities = new IdentityStore(dir);
+  await identities.init();
   const cache = new ExportCache(dir, Date.now, store);
   store.onDatesChanged = (dates) => cache.invalidate(dates);
   const exports = new ImageExports(cache);
@@ -33,6 +36,24 @@ export async function createApp(
     next();
   });
   app.use(express.json({ limit: '64kb' }));
+  const tokenOf = (req: express.Request) => req.get('authorization')?.match(/^Bearer (.+)$/)?.[1] || req.get('cookie')?.split(';').map((v) => v.trim()).find((v) => v.startsWith('parallel_device='))?.slice('parallel_device='.length);
+  const setDevice = (res: express.Response, token: string) => res.cookie('parallel_device', token, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', maxAge: 3650 * 86400_000, path: '/' });
+  const currentUser = (req: express.Request) => identities.authenticate(tokenOf(req));
+  const context = (req: express.Request) => {
+    const user = currentUser(req);
+    const circleId = req.get('x-circle-id') || (typeof req.query.circleId === 'string' ? req.query.circleId : undefined);
+    if (!circleId) throw new HttpError(400, '请选择圈子');
+    return { user, circleId, circle: identities.assertMember(circleId, user.id) };
+  };
+  app.post('/api/identity', async (req, res) => { const result = await identities.createUser(req.body?.nickname, req.body?.avatar); setDevice(res, result.deviceToken); res.status(201).json(result); });
+  app.post('/api/identity/recover', async (req, res) => { const result = await identities.recover(req.body?.recoveryCode); setDevice(res, result.deviceToken); res.json(result); });
+  app.get('/api/me', (req, res) => { const user = currentUser(req); res.json({ user, circles: identities.circlesFor(user.id) }); });
+  app.post('/api/circles', async (req, res) => { const user = currentUser(req); const circle = await identities.createCircle(user.id, req.body?.name, req.body?.inviteCode); await store.claimLegacyEntries(circle.id); res.status(201).json(circle); });
+  app.post('/api/circles/join', async (req, res) => { const user = currentUser(req); res.json(await identities.joinCircle(user.id, req.body?.inviteCode)); });
+  app.get('/api/circles/:circleId/members', (req, res) => { const user = currentUser(req); res.json(identities.members(req.params.circleId, user.id)); });
+  app.put('/api/circles/:circleId/invite-code', async (req, res) => { const user = currentUser(req); await identities.resetInvite(req.params.circleId, user.id, req.body?.inviteCode); res.sendStatus(204); });
+  app.delete('/api/circles/:circleId/members/:userId', async (req, res) => { const user = currentUser(req); await identities.removeMember(req.params.circleId, user.id, req.params.userId); res.sendStatus(204); });
+  app.delete('/api/circles/:circleId', async (req, res) => { const user = currentUser(req); await identities.deleteCircle(req.params.circleId, user.id); res.sendStatus(204); });
   app.use('/api/exports', async (_req, _res, next) => {
     await cache.cleanup();
     next();
@@ -66,8 +87,12 @@ export async function createApp(
       next(error);
     });
   };
-  async function saveEntry(body: Record<string, unknown>, file?: Express.Multer.File, id?: string) {
-    const input = await validateEntry(body, file);
+  async function saveEntry(req: express.Request, body: Record<string, unknown>, file?: Express.Multer.File, id?: string) {
+    const { user, circleId } = context(req);
+    const previous = id ? store.find(id) : undefined;
+    if (id && (!previous || previous.circleId !== circleId)) throw new HttpError(404, '动态不存在');
+    if (previous && previous.personId !== user.id) throw new HttpError(403, '只能修改自己的动态');
+    const input = await validateEntry(body, file, { userId: user.id, circleId });
     let bytes = file?.buffer;
     if (file && input.media.type === 'photo') {
       const extension = input.media.filename.split('.').pop() as PhotoExtension;
@@ -79,12 +104,13 @@ export async function createApp(
     return store.save(input, bytes, id);
   }
   app.get('/api/entry-dates', (req, res) => {
+    const { circleId } = context(req);
     const first = checkDate(`${req.query.month}-01`);
-    res.json(store.dateCounts(first.slice(0, 7)));
+    res.json(store.dateCounts(first.slice(0, 7), circleId));
   });
-  app.get('/api/entries', (req, res) => res.json(store.list(checkDate(req.query.date))));
+  app.get('/api/entries', (req, res) => { const { circleId } = context(req); res.json(store.list(checkDate(req.query.date), circleId)); });
   app.post('/api/entries', upload, async (req, res) => {
-    const entry = await saveEntry(req.body || {}, req.file);
+    const entry = await saveEntry(req, req.body || {}, req.file);
     res.status(201).json(entry);
     void Promise.resolve()
       .then(() => notify(entry))
@@ -93,34 +119,41 @@ export async function createApp(
       });
   });
   app.patch('/api/entries/:id', upload, async (req, res) =>
-    res.json(await saveEntry(req.body || {}, req.file, String(req.params.id))),
+    res.json(await saveEntry(req, req.body || {}, req.file, String(req.params.id))),
   );
   app.delete('/api/entries/:id', async (req, res) => {
+    const { user, circleId } = context(req);
+    const entry = store.find(req.params.id);
+    if (!entry || entry.circleId !== circleId) throw new HttpError(404, '动态不存在');
+    if (entry.personId !== user.id) throw new HttpError(403, '只能删除自己的动态');
     await store.delete(req.params.id);
     res.sendStatus(204);
   });
   app.post('/api/exports/images', async (req, res) => {
+    const { circleId } = context(req);
     const date = checkDate(req.body?.date);
-    const items = await snapshot(store, date);
+    const items = await snapshot(store, date, undefined, circleId);
     const result = await exports.generate(items, date);
     cache.assertCurrent(date, items[0].sourceRevision!);
     res.json(result);
   });
   app.post('/api/exports/posts', async (req, res) => {
+    const { circleId } = context(req);
     const date = checkDate(req.body?.date);
     const entryId = req.body?.entryId;
     if (typeof entryId !== 'string' || !entryId.trim()) throw new HttpError(400, '请选择动态');
-    const items = await snapshot(store, date, entryId);
+    const items = await snapshot(store, date, entryId, circleId);
     const result = await exports.generate(items, date, true);
     cache.assertCurrent(date, items[0].sourceRevision!);
     res.json(result);
   });
-  app.get('/api/exports/video-options', async (_req, res) => res.json(await videos.options()));
+  app.get('/api/exports/video-options', async (req, res) => { context(req); res.json(await videos.options()); });
   app.post('/api/exports/videos', async (req, res) => {
+    const { circleId } = context(req);
     const date = checkDate(req.body?.date);
     videoSelection(req.body?.styleId, req.body?.musicId);
     const job = await videos.start(
-      await snapshot(store, date),
+      await snapshot(store, date, undefined, circleId),
       date,
       req.body.styleId,
       req.body.musicId,
@@ -128,17 +161,19 @@ export async function createApp(
     res.status(job.status === 'ready' ? 200 : 202).json(job);
   });
   app.get('/api/exports/videos/:jobId', async (req, res) =>
-    res.json(await videos.status(req.params.jobId)),
+    (context(req), res.json(await videos.status(req.params.jobId))),
   );
   app.get('/api/exports/music/:musicId', async (req, res) => {
+    context(req);
     const music = videoMusic.find((item) => item.id === req.params.musicId);
     if (!music) throw new HttpError(404, '音乐不存在');
     await musicBytes(music);
     res.sendFile(path.join(publicDir, music.file));
   });
   app.get('/api/exports/archive', async (req, res) => {
+    const { circleId } = context(req);
     const date = checkDate(req.query.date);
-    const items = await snapshot(store, date);
+    const items = await snapshot(store, date, undefined, circleId);
     if (req.query.check === '1') {
       res.json({ count: items.length });
       return;
@@ -146,10 +181,12 @@ export async function createApp(
     await streamArchive(res, items, date);
   });
   app.get('/api/exports/:token/validity', async (req, res) => {
+    context(req);
     if (!(await cache.read(req.params.token))) throw new HttpError(404, '导出已过期，请重新生成');
     res.sendStatus(204);
   });
   app.get('/api/exports/files/:token/:name', async (req, res) => {
+    context(req);
     const { filename, downloadName, release } = await cache.acquireFile(
       req.params.token,
       req.params.name,
@@ -162,10 +199,12 @@ export async function createApp(
     res.sendFile(filename);
   });
   app.use('/api', (_req, _res, next) => next(new HttpError(404, '接口不存在')));
-  app.use(
-    '/uploads',
-    express.static(store.uploads, { dotfiles: 'deny', fallthrough: false, maxAge: '30d' }),
-  );
+  app.get('/api/uploads/:filename', (req, res) => {
+    const { circleId } = context(req);
+    const entry = store.findByFilename(req.params.filename);
+    if (!entry || entry.circleId !== circleId) throw new HttpError(404, '文件不存在');
+    res.sendFile(path.join(store.uploads, req.params.filename));
+  });
   app.use(
     express.static(publicDir, {
       maxAge: '30d',
@@ -211,5 +250,5 @@ export async function createApp(
       });
     },
   );
-  return { app, store, dispose: () => cache.dispose() };
+  return { app, store, identities, dispose: () => cache.dispose() };
 }

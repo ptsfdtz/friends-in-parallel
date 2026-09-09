@@ -1,14 +1,14 @@
 import { photoExtension, PHOTO_MIMES, MAX_PHOTO_BYTES, type PhotoExtension } from './photos.js';
 import { randomUUID } from 'node:crypto';
-import { people, stickerById, emojiSticker } from './config.js';
+import { stickerById, emojiSticker } from './config.js';
 import { checkDate, HttpError, type Media, type Entry } from './model.js';
 export async function validateEntry(
   body: Record<string, unknown>,
   file?: Express.Multer.File,
+  identity?: { userId: string; circleId: string },
 ): Promise<Omit<Entry, 'id' | 'createdAt' | 'updatedAt'>> {
-  const { personId, description = '', occurredAt, mediaType } = body;
-  if (typeof personId !== 'string' || !people.some((p) => p.id === personId))
-    throw new HttpError(400, '请选择一位朋友');
+  const { description = '', occurredAt, mediaType } = body;
+  if (!identity) throw new HttpError(401, '请先建立身份并进入圈子');
   if (typeof description !== 'string' || Array.from(description).length > 500)
     throw new HttpError(400, '描述请控制在 500 字以内');
   if (
@@ -54,7 +54,8 @@ export async function validateEntry(
   } else throw new HttpError(400, '请选择照片、表情或贴纸');
   if (file && mediaType !== 'photo') throw new HttpError(400, '每条动态只能选择一种素材');
   return {
-    personId,
+    personId: identity.userId,
+    circleId: identity.circleId,
     description: description.trim(),
     occurredAt: new Date(occurredAt).toISOString(),
     media,

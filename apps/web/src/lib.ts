@@ -1,4 +1,4 @@
-import { people, stickers } from '@parallel/config';
+import { people, stickers, type Person } from '@parallel/config';
 export { people, stickers, packs } from '@parallel/config';
 export type { Person, Sticker } from '@parallel/config';
 export type Media =
@@ -7,6 +7,7 @@ export type Media =
   | { type: 'sticker'; stickerId: string };
 export interface Entry {
   id: string;
+  circleId?: string;
   personId: string;
   media: Media;
   description: string;
@@ -14,6 +15,13 @@ export interface Entry {
   createdAt: string;
   updatedAt: string;
 }
+export interface User { id: string; nickname: string; avatar: string; color: string; background: string }
+export interface Circle { id: string; name: string; creatorId: string; createdAt: string; role: 'creator' | 'member'; memberCount: number }
+let activeCircleId = localStorage.getItem('parallel.circle') || '';
+let activeUserId = '';
+export function setActiveIdentity(userId: string, circleId: string) { activeUserId = userId; activeCircleId = circleId; if (circleId) localStorage.setItem('parallel.circle', circleId); }
+export const currentUserId = () => activeUserId;
+export function setPeople(next: Person[]) { people.splice(0, people.length, ...next); }
 export interface ImageExport {
   images: string[];
   expiresAt: string;
@@ -35,7 +43,7 @@ export const personOf = (id: string) =>
   };
 export const mediaSrc = (media: Media) =>
   media.type === 'photo'
-    ? `/uploads/${media.filename}`
+    ? `/api/uploads/${media.filename}?circleId=${encodeURIComponent(activeCircleId)}`
     : media.type === 'sticker'
       ? stickers.find((s) => s.id === media.stickerId)?.file
       : stickers.find((s) => s.packId === 'fluent' && s.emoji === media.emoji)?.file;
@@ -46,7 +54,9 @@ export const mediaName = (media: Media) =>
       ? media.emoji
       : stickers.find((s) => s.id === media.stickerId)?.name || '贴纸';
 export async function api<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
+  const headers = new Headers(init?.headers);
+  if (activeCircleId) headers.set('x-circle-id', activeCircleId);
+  const res = await fetch(url, { ...init, headers });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error || '连接有点慢，请再试一次');
@@ -61,6 +71,7 @@ export function uploadEntry(
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open(id ? 'PATCH' : 'POST', id ? `/api/entries/${id}` : '/api/entries');
+    if (activeCircleId) xhr.setRequestHeader('x-circle-id', activeCircleId);
     xhr.timeout = 120000;
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));

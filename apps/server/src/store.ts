@@ -7,8 +7,8 @@ export class Store {
   private entries: Entry[] = [];
   private revisions: Record<string, string> = {};
   onDatesChanged: (dates: string[]) => void = () => {};
-  revision(date: string) {
-    return this.revisions[date] || 'empty';
+  revision(date: string, circleId = '') {
+    return this.revisions[`${circleId}:${date}`] || this.revisions[date] || 'empty';
   }
   private tail: Promise<unknown> = Promise.resolve();
   readonly uploads: string;
@@ -49,24 +49,28 @@ export class Store {
     this.tail = result.catch(() => {});
     return result;
   }
-  list(date: string) {
+  list(date: string, circleId?: string) {
     return structuredClone(
       this.entries
-        .filter((e) => beijingDate(e.occurredAt) === date)
+        .filter((e) => beijingDate(e.occurredAt) === date && (!circleId || e.circleId === circleId))
         .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt) || a.id.localeCompare(b.id)),
     );
   }
-  dateCounts(month: string) {
+  dateCounts(month: string, circleId?: string) {
     const counts: Record<string, number> = {};
     for (const entry of this.entries) {
       const date = beijingDate(entry.occurredAt);
-      if (date.startsWith(month + '-')) counts[date] = (counts[date] || 0) + 1;
+      if (date.startsWith(month + '-') && (!circleId || entry.circleId === circleId)) counts[date] = (counts[date] || 0) + 1;
     }
     return counts;
   }
-  private async persist(next: Entry[], dates: string[]) {
+  private async persist(next: Entry[], dates: string[], circleId = '') {
     const revisions = { ...this.revisions };
-    for (const date of new Set(dates)) revisions[date] = randomUUID();
+    for (const date of new Set(dates)) {
+      const revision = randomUUID();
+      revisions[date] = revision;
+      revisions[`${circleId}:${date}`] = revision;
+    }
     const tmp = path.join(this.dir, `entries.${randomUUID()}.tmp`);
     try {
       await writeFile(
@@ -107,7 +111,7 @@ export class Store {
       try {
         await this.persist(
           previous ? this.entries.map((e) => (e.id === id ? entry : e)) : [...this.entries, entry],
-          [beijingDate(entry.occurredAt), ...(previous ? [beijingDate(previous.occurredAt)] : [])],
+          [beijingDate(entry.occurredAt), ...(previous ? [beijingDate(previous.occurredAt)] : [])], entry.circleId,
         );
       } catch (e) {
         if (added) await unlink(added).catch(() => {});
@@ -121,13 +125,23 @@ export class Store {
       return structuredClone(entry);
     });
   }
+  find(id: string) { return this.entries.find((entry) => entry.id === id); }
+  findByFilename(filename: string) { return this.entries.find((entry) => entry.media.type === 'photo' && entry.media.filename === filename); }
+  async claimLegacyEntries(circleId: string) {
+    const legacy = this.entries.filter((entry) => !entry.circleId);
+    if (!legacy.length) return;
+    await this.exclusive(async () => {
+      const dates = legacy.map((entry) => beijingDate(entry.occurredAt));
+      await this.persist(this.entries.map((entry) => entry.circleId ? entry : { ...entry, circleId }), dates, circleId);
+    });
+  }
   async delete(id: string) {
     return this.exclusive(async () => {
       const entry = this.entries.find((e) => e.id === id);
       if (!entry) throw new HttpError(404, '这条动态已经不在了');
       await this.persist(
         this.entries.filter((e) => e.id !== id),
-        [beijingDate(entry.occurredAt)],
+        [beijingDate(entry.occurredAt)], entry.circleId,
       );
       if (entry.media.type === 'photo')
         await unlink(path.join(this.uploads, entry.media.filename)).catch(() => {});

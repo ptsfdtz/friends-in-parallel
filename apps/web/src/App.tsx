@@ -1,6 +1,6 @@
 import { Icon as IslandIcon, Button } from 'animal-island-ui';
 import { useEffect, useRef, useState } from 'react';
-import { Plus, Check, LoaderCircle, Clapperboard, CalendarDays, ArrowUp } from 'lucide-react';
+import { Plus, Check, LoaderCircle, Clapperboard, CalendarDays, ArrowUp, Users } from 'lucide-react';
 import { DateCalendar } from './DateCalendar';
 import { Composer } from './Composer';
 import { Timeline } from './Timeline';
@@ -9,6 +9,7 @@ import { videoMusic } from '@parallel/config';
 import { Modal } from './Modal';
 import { usePullToRefresh } from './usePullToRefresh';
 import { api, today, dateOf, type Entry } from './lib';
+import { CircleMembers } from './CircleMembers';
 export default function App() {
   const [date, setDate] = useState(today());
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -31,7 +32,7 @@ export default function App() {
     [deleteError, setDeleteError] = useState('');
   const [toast, setToast] = useState(''),
     [focusId, setFocusId] = useState(''),
-    [credits, setCredits] = useState(false);
+    [credits, setCredits] = useState(false), [membersOpen, setMembersOpen] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
@@ -118,6 +119,7 @@ export default function App() {
             <p>同一时间，看看朋友们都在干嘛。</p>
           </div>
           <div className="header-actions">
+            <button type="button" className="date-picker compact-date-picker" onClick={() => setMembersOpen(true)} aria-label="成员列表"><span><IslandIcon icon={Users} size={16}/><strong>成员</strong></span></button>
             <button
               ref={calendarTrigger}
               type="button"
@@ -285,6 +287,7 @@ export default function App() {
           </div>
         </Modal>
       )}
+      {membersOpen && <CircleMembers onClose={() => setMembersOpen(false)} />}
       {toast && (
         <div className="toast" role="status">
           <IslandIcon icon={Check} size={17} />

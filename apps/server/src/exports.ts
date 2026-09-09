@@ -37,10 +37,11 @@ export async function snapshot(
   store: Store,
   date: string,
   entryId?: string,
+  circleId?: string,
 ): Promise<SnapshotItem[]> {
   return store.exclusive(async () => {
     const entries = store
-      .list(date)
+      .list(date, circleId)
       .filter((entry) => entryId === undefined || entry.id === entryId);
     if (entryId !== undefined && !entries.length) throw new HttpError(404, '动态不存在');
     if (!entries.length) throw new HttpError(400, '这一天还没动态，先冒个泡吧');

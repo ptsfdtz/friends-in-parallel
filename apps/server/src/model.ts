@@ -5,12 +5,26 @@ export type Media =
   | { type: 'sticker'; stickerId: string };
 export interface Entry {
   id: string;
+  circleId?: string;
   personId: string;
   media: Media;
   description: string;
   occurredAt: string;
   createdAt: string;
   updatedAt: string;
+}
+export interface User {
+  id: string;
+  nickname: string;
+  avatar: string;
+  color: string;
+  background: string;
+}
+export interface Circle {
+  id: string;
+  name: string;
+  creatorId: string;
+  createdAt: string;
 }
 export class HttpError extends Error {
   constructor(

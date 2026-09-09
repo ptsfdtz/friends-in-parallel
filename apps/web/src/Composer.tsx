@@ -1,4 +1,4 @@
-import { Input, Icon as IslandIcon, Button } from 'animal-island-ui';
+import { Input, Icon as IslandIcon, Button, DatePicker, TimePicker } from 'animal-island-ui';
 import { useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
@@ -26,6 +26,7 @@ import {
   readPreference,
   preference,
   uploadEntry,
+  currentUserId,
   type Entry,
   type Sticker,
 } from './lib';
@@ -63,11 +64,8 @@ function ComposerEditor({
   onSaved,
   draft,
 }: ComposerProps & { draft?: Draft }) {
-  const initialPerson = entry?.personId || draft?.personId || readPreference('parallel.person', '');
-  const [step, setStep] = useState(entry || people.some((p) => p.id === initialPerson) ? 2 : 1),
-    [personId, setPersonId] = useState(
-      people.some((p) => p.id === initialPerson) ? initialPerson : '',
-    );
+  const initialPerson = entry?.personId || currentUserId();
+  const [step, setStep] = useState(2), [personId, setPersonId] = useState(initialPerson);
   const [type, setType] = useState<'photo' | 'sticker'>(
     entry ? (entry.media.type === 'photo' ? 'photo' : 'sticker') : draft?.type || 'photo',
   );
@@ -194,7 +192,6 @@ function ComposerEditor({
       return;
     }
     const form = new FormData();
-    form.set('personId', personId);
     form.set('description', description);
     form.set('occurredAt', parsed.toISOString());
     form.set('mediaType', type);
@@ -337,8 +334,7 @@ function ComposerEditor({
                   type="text"
                   htmlType="button"
                   className="island-control back-person"
-                  disabled={busy}
-                  onClick={() => setStep(1)}
+                  disabled
                 >
                   <span
                     className="avatar small"
@@ -350,9 +346,7 @@ function ComposerEditor({
                     <span>记录的人</span>
                     <strong>{personOf(personId).nickname}</strong>
                   </span>
-                  <span className="change-person">
-                    换一位朋友 <IslandIcon icon={ChevronRight} size={15} />
-                  </span>
+                  <span className="change-person">身份已确认</span>
                 </Button>
                 <fieldset disabled={busy} className="editor-sections" aria-label="动态内容">
                   <section className="editor-section">
@@ -488,21 +482,39 @@ function ComposerEditor({
                         <IslandIcon icon={Clock} size={18} />
                       </span>
                       <div>
-                        <h3>
-                          <label htmlFor="moment-time">发生的时间</label>
-                        </h3>
+                        <h3 id="moment-time-label">发生的时间</h3>
                         <p>北京时间 · 也可以补记过去</p>
                       </div>
                     </div>
                     <div className="time-input">
-                      <Input
-                        className="island-date-input"
-                        required
-                        type="datetime-local"
-                        id="moment-time"
-                        max={localTime()}
-                        value={time}
-                        onChange={(e) => setTime(e.target.value)}
+                      <DatePicker
+                        className="island-moment-date"
+                        value={time.slice(0, 10)}
+                        format="YYYY/MM/DD"
+                        allowClear={false}
+                        showToday
+                        disabled={busy}
+                        disabledDate={(value) => value.getTime() > Date.now()}
+                        aria-labelledby="moment-time-label"
+                        onChange={(value) => {
+                          if (typeof value !== 'string') return;
+                          const next = `${value}T${time.slice(11, 16)}`;
+                          setTime(next > localTime() ? localTime() : next);
+                        }}
+                      />
+                      <TimePicker
+                        className="island-moment-clock"
+                        value={`${time.slice(11, 16)}:00`}
+                        format="HH:mm"
+                        allowClear={false}
+                        minuteStep={1}
+                        disabled={busy}
+                        aria-label="发生的时刻"
+                        onChange={(value) => {
+                          if (!value) return;
+                          const next = `${time.slice(0, 10)}T${value.slice(0, 5)}`;
+                          setTime(next > localTime() ? localTime() : next);
+                        }}
                       />
                       <Button
                         className="island-control"
