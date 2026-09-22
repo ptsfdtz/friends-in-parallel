@@ -23,6 +23,12 @@
   --muted: var(--animal-text-color-secondary);
   --line: var(--animal-border-color-light);
   --accent: var(--animal-primary-color);
+  --motion-fast: 140ms;
+  --motion-standard: 220ms;
+  --motion-modal: 260ms;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   font-family: var(--animal-font-family);
   color: var(--ink);
   background: var(--animal-bg-color-secondary);
@@ -64,6 +70,7 @@ input:focus-visible,
   padding-bottom: 20px;
   margin-bottom: 20px;
   border-bottom: 2px dashed var(--animal-border-color);
+  animation: item-enter var(--motion-standard) var(--ease-out) both;
 }
 .brand {
   color: var(--ink);
@@ -460,6 +467,7 @@ input:focus-visible,
   padding: 5px 7px 10px;
   background: var(--animal-primary-color);
   border-radius: 50px;
+  animation: actions-enter var(--motion-modal) var(--ease-out) both;
 }
 .floating-actions {
   display: flex;
@@ -478,6 +486,18 @@ input:focus-visible,
   height: auto;
   min-height: 44px;
   white-space: normal;
+  transition:
+    transform var(--motion-fast) var(--ease-out),
+    background-color var(--motion-fast) ease,
+    border-color var(--motion-fast) ease,
+    color var(--motion-fast) ease,
+    box-shadow var(--motion-fast) ease;
+}
+.island-control:not(:disabled):active,
+.circle-list button:not(:disabled):active,
+.avatar-options button:not(:disabled):active,
+.date-picker:not(:disabled):active {
+  transform: scale(0.97);
 }
 .island-control > span {
   display: contents;
@@ -615,6 +635,19 @@ input:focus-visible,
   background: var(--paper);
   border: 2px solid var(--animal-border-color);
   border-radius: 32px;
+}
+.sheet-modal[open] {
+  animation: modal-enter var(--motion-modal) var(--ease-out) both;
+}
+.sheet-modal[open]::backdrop {
+  animation: backdrop-enter var(--motion-standard) var(--ease-out) both;
+}
+.sheet-modal[data-closing] {
+  pointer-events: none;
+  animation: modal-exit 180ms var(--ease-out) both;
+}
+.sheet-modal[data-closing]::backdrop {
+  animation: backdrop-exit 180ms var(--ease-out) both;
 }
 .sheet-modal::backdrop {
   background: color-mix(in srgb, var(--animal-text-color) 38%, transparent);
@@ -783,6 +816,17 @@ input:focus-visible,
   overflow-wrap: anywhere;
   line-height: 1.6;
 }
+.toast {
+  opacity: 0;
+  transform: translate(-50%, 100%);
+  transition:
+    opacity 240ms var(--ease-out),
+    transform 240ms var(--ease-out);
+}
+.toast.visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
 .toast > svg {
   flex-shrink: 0;
 }
@@ -861,6 +905,39 @@ a.secondary {
 .calendar-days button {
   border-radius: 50px;
 }
+.hour-group {
+  animation: timeline-enter var(--motion-standard) var(--ease-out) both;
+  animation-delay: calc(var(--motion-index, 0) * 45ms);
+}
+.timeline-view > .empty-state {
+  animation: empty-enter var(--motion-modal) var(--ease-out) both;
+}
+.friend-filter-option,
+.member-row,
+.circle-list > button,
+.sticker-grid > button {
+  animation: item-enter var(--motion-standard) var(--ease-out) both;
+}
+.friend-filter-option:nth-child(2), .member-row:nth-child(2), .circle-list > button:nth-child(2), .sticker-grid > button:nth-child(2) { animation-delay: 40ms; }
+.friend-filter-option:nth-child(3), .member-row:nth-child(3), .circle-list > button:nth-child(3), .sticker-grid > button:nth-child(3) { animation-delay: 80ms; }
+.friend-filter-option:nth-child(4), .member-row:nth-child(4), .circle-list > button:nth-child(4), .sticker-grid > button:nth-child(4) { animation-delay: 120ms; }
+.composer-modal .editor-section {
+  animation: item-enter var(--motion-standard) var(--ease-out) both;
+}
+.composer-modal .editor-section:nth-child(2) { animation-delay: 45ms; }
+.composer-modal .editor-section:nth-child(3) { animation-delay: 90ms; }
+.access-card {
+  animation: access-enter var(--motion-modal) var(--ease-out) both;
+}
+@keyframes modal-enter { from { opacity: 0; transform: scale(0.96); } }
+@keyframes modal-exit { to { opacity: 0; transform: scale(0.97); } }
+@keyframes backdrop-enter { from { opacity: 0; } }
+@keyframes backdrop-exit { to { opacity: 0; } }
+@keyframes timeline-enter { from { opacity: 0; transform: translateY(8px); } }
+@keyframes item-enter { from { opacity: 0; transform: translateY(6px); } }
+@keyframes empty-enter { from { opacity: 0; transform: translateY(8px) scale(0.98); } }
+@keyframes access-enter { from { opacity: 0; transform: translateY(10px) scale(0.98); } }
+@keyframes actions-enter { from { opacity: 0; transform: translate(-50%, 70%); } }
 .calendar-days button[aria-current='date'] {
   box-shadow: none;
   outline: 1px dashed var(--accent);
@@ -1082,6 +1159,8 @@ a.secondary {
     border-bottom: 0;
     max-height: var(--viewport-height, 100dvh);
   }
+  .sheet-modal[open] { animation-name: sheet-enter; animation-duration: 280ms; animation-timing-function: var(--ease-drawer); }
+  .sheet-modal[data-closing] { animation-name: sheet-exit; animation-duration: 180ms; animation-timing-function: var(--ease-out); }
   .sheet-inner {
     max-height: calc(var(--viewport-height, 100dvh) - 2px);
   }
@@ -1110,6 +1189,8 @@ a.secondary {
     padding: 12px 14px 12px 20px;
   }
 }
+@keyframes sheet-enter { from { opacity: 0.7; transform: translateY(100%); } }
+@keyframes sheet-exit { to { opacity: 0; transform: translateY(100%); } }
 @media (max-width: 360px) {
   .brand-header {
     flex-wrap: nowrap;
@@ -1155,10 +1236,32 @@ a.secondary {
   *,
   *::before,
   *::after {
-    transition: none !important;
-    animation: none !important;
     scroll-behavior: auto !important;
   }
+  .sheet-modal[open], .sheet-modal[data-closing], .access-card, .hour-group, .brand-header,
+  .timeline-view > .empty-state, .friend-filter-option, .member-row,
+  .circle-list > button, .sticker-grid > button, .composer-modal .editor-section, .floating-actions {
+    transform: none !important;
+    animation: reduced-fade 160ms ease both !important;
+    animation-delay: 0ms !important;
+  }
+  .toast {
+    transform: translateX(-50%);
+    transition: opacity 160ms ease;
+  }
+  .toast.visible { transform: translateX(-50%); }
+  .floating-actions { transform: translateX(-50%) !important; }
+  .island-control, .circle-list button, .avatar-options button, .date-picker {
+    transform: none !important;
+    transition:
+      background-color 120ms ease,
+      border-color 120ms ease,
+      color 120ms ease !important;
+  }
+  .spin {
+    animation: none !important;
+  }
+  @keyframes reduced-fade { from { opacity: 0; } }
 }
 
 @media (max-height: 500px) and (min-width: 601px) {

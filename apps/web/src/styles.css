@@ -1046,7 +1046,6 @@ textarea {
   *,
   *::before,
   *::after {
-    animation: none !important;
     scroll-behavior: auto !important;
   }
 }

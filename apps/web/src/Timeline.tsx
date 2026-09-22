@@ -164,11 +164,11 @@ export function Timeline({
         </div>
       ) : (
         <div className="hour-timeline">
-          {hours.map((hour) => {
+          {hours.map((hour, hourIndex) => {
             const hourEntries = visible.filter((e) => timeOf(e.occurredAt).startsWith(hour));
             const companions = [...new Set(hourEntries.map((e) => e.personId))].map(personOf);
             return (
-              <section className="hour-group" key={hour}>
+              <section className="hour-group" key={`${filter}:${hour}`} style={{ '--motion-index': Math.min(hourIndex, 4) } as React.CSSProperties}>
                 <div className="hour-heading">
                   <time>{hour}:00</time>
                   <span className="hour-line" />

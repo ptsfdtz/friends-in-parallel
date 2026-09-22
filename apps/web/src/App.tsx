@@ -30,7 +30,7 @@ export default function App() {
     [deleteEntry, setDeleteEntry] = useState<Entry>(),
     [deleting, setDeleting] = useState(false),
     [deleteError, setDeleteError] = useState('');
-  const [toast, setToast] = useState(''),
+  const [toast, setToast] = useState(''), [toastVisible, setToastVisible] = useState(false),
     [focusId, setFocusId] = useState(''),
     [credits, setCredits] = useState(false), [membersOpen, setMembersOpen] = useState(false);
   useEffect(() => {
@@ -54,8 +54,10 @@ export default function App() {
   }, [date, revision]);
   useEffect(() => {
     if (!toast) return;
-    const id = setTimeout(() => setToast(''), 3500);
-    return () => clearTimeout(id);
+    const frame = requestAnimationFrame(() => setToastVisible(true));
+    const hide = setTimeout(() => setToastVisible(false), 3100);
+    const remove = setTimeout(() => setToast(''), 3400);
+    return () => { cancelAnimationFrame(frame); clearTimeout(hide); clearTimeout(remove); };
   }, [toast]);
   useEffect(() => {
     if (!focusId || loading) return;
@@ -289,7 +291,7 @@ export default function App() {
       )}
       {membersOpen && <CircleMembers onClose={() => setMembersOpen(false)} />}
       {toast && (
-        <div className="toast" role="status">
+        <div className={`toast ${toastVisible ? 'visible' : ''}`} role="status">
           <IslandIcon icon={Check} size={17} />
           {toast}
         </div>

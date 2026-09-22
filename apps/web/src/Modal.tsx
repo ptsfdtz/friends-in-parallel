@@ -1,5 +1,5 @@
 import { Icon as IslandIcon, Button } from 'animal-island-ui';
-import { useEffect, useRef, type MutableRefObject, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type MutableRefObject, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 export function Modal({
   title,
@@ -21,6 +21,14 @@ export function Modal({
   cancelGuard?: MutableRefObject<boolean>;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const [closing, setClosing] = useState(false);
+  const closeTimer = useRef<number | undefined>(undefined);
+  const requestClose = () => {
+    if (busy || closing) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { onClose(); return; }
+    setClosing(true);
+    closeTimer.current = window.setTimeout(onClose, 180);
+  };
   useEffect(() => {
     const el = ref.current!;
     el.showModal();
@@ -52,6 +60,7 @@ export function Modal({
     const previous = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
+      if (closeTimer.current) clearTimeout(closeTimer.current);
       cancelAnimationFrame(frame);
       el.removeEventListener('focusin', revealInput);
       window.removeEventListener('resize', resize);
@@ -64,6 +73,7 @@ export function Modal({
   return (
     <dialog
       className={`sheet-modal ${wide ? 'wide' : ''} ${className}`}
+      data-closing={closing || undefined}
       ref={ref}
       aria-label={title}
       onCancel={(e) => {
@@ -72,10 +82,10 @@ export function Modal({
           cancelGuard.current = false;
           return;
         }
-        if (!busy) onClose();
+        requestClose();
       }}
       onClick={(e) => {
-        if (e.target === ref.current && !busy) onClose();
+        if (e.target === ref.current) requestClose();
       }}
     >
       <div className="sheet-inner">
@@ -87,7 +97,7 @@ export function Modal({
               type="text"
               className="island-control icon-button"
               aria-label="关闭"
-              onClick={onClose}
+              onClick={requestClose}
               disabled={busy}
             >
               <IslandIcon icon={X} size={21} />
